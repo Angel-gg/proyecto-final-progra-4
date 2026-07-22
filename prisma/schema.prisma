@@ -1,0 +1,49 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+model Surtidor {
+  id          Int      @id @default(autoincrement())
+  numero      Int      @unique // Número de Surtidor (ej: 1, 2, 3)
+  combustible String   // Ej: Gasolina Especial, Diesel, GNV, Premium
+  capacidad   Float    // Capacidad máxima en Litros (ej: 10000)
+  nivelLitros Float    // Cantidad actual en Litros (ej: 5000)
+  codigoBinario String // Repr. Binaria de Nivel: "00" (0-25%), "01" (25-50%), "10" (50-75%), "11" (75-100%)
+  estado      String   @default("OPERATIVO") // OPERATIVO, MANTENIMIENTO, ALERTA
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  
+  ventas      Venta[]
+  alertas     Alerta[]
+}
+
+model Venta {
+  id             Int      @id @default(autoincrement())
+  fecha          DateTime @default(now())
+  combustible    String
+  litros         Float
+  precioPorLitro Float
+  total          Float
+  totalBinario   String   // Representación en Aritmética Binaria para el concepto SD
+  surtidorId     Int
+  surtidor       Surtidor @relation(fields: [surtidorId], references: [id], onDelete: Cascade)
+}
+
+model Alerta {
+  id         Int      @id @default(autoincrement())
+  surtidorId Int
+  surtidor   Surtidor @relation(fields: [surtidorId], references: [id], onDelete: Cascade)
+  tipo       String   // BAJO (LED Amarillo, 25-50%), CRITICO (LED Rojo, <25%)
+  mensaje    String
+  logicaKarnaugh String // Expresión booleana K-Map que activó la alerta
+  fecha      DateTime @default(now())
+  estado     String   @default("ACTIVA") // ACTIVA, RESUELTA
+}
