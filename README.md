@@ -1,6 +1,16 @@
 # Sistema Digital de Control y Gestión para Surtidor de Gasolina en Cochabamba
 
+[![Deploy with Vercel](https://vercel.com/button)](https://vercel.com/new/clone?repository-url=https%3A%2F%2Fgithub.com%2FAngel-gg%2Fproyecto-final-progra-4&env=DATABASE_URL)
+
 Aplicación multiplataforma para la gestión integral de la Estación de Servicio **"El Surtidor Cochabambino"**, aplicando conceptos de **Sistemas Digitales** (sensores de nivel en binario `00, 01, 10, 11`, mapas de Karnaugh, compuertas lógicas y aritmética binaria) con una base de datos SQLite y ORM Prisma.
+
+---
+
+## 📖 Documentación Académica
+Para ver a detalle el marco teórico, ecuaciones booleanas simplificadas y el desarrollo de mapas de Karnaugh aplicados, consulta la:
+👉 **[Documentación de Diseño Digital e Ingeniería de Software](DOCUMENTACION_DISEÑO.md)**
+
+---
 
 ## 🚀 Características
 - **Dashboard Interactivo**: Visualización en tiempo real con estética moderna (Glassmorphism, dark mode, indicadores LED animados).
@@ -10,24 +20,26 @@ Aplicación multiplataforma para la gestión integral de la Estación de Servici
 - **APIs Web**: Control de navegación por voz con **Web Speech API** y exportación de reportes al portapapeles con **Clipboard API**.
 - **Base de Datos**: SQLite gestionada vía **Prisma ORM**.
 
+---
+
 ## 🛠️ Tecnologías
 - **Framework**: Next.js 14 / React
 - **Base de Datos**: SQLite con Prisma ORM
 - **Estilos**: Vanilla CSS con variables customizables
 - **Control de Versiones**: Git & GitHub
 
-## 🏃 Cómo Ejecutar el Proyecto
+---
+
+## 🏃 Cómo Ejecutar el Proyecto Localmente
+
 ```bash
 # 1. Instalar dependencias
 npm install
 
-# 2. Inicializar BD SQLite y ejecutar migraciones
-npx prisma db push
+# 2. Inicializar BD SQLite y ejecutar migraciones / seed
+npm run build
 
-# 3. Cargar datos de prueba (Seed)
-npm run db:seed
-
-# 4. Iniciar servidor de desarrollo
+# 3. Iniciar servidor de desarrollo
 npm run dev
 ```
 
