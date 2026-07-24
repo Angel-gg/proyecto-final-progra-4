@@ -1,8 +1,6 @@
 /**
  * API Route: /api/ventas
- * Refactorizada para usar:
- *   - PrismaAdapter   (Patrón Estructural/Adapter) — transacción atómica
- *   - NivelSurtidorSubject + AlertaPersistenciaObserver (Patrón Observer)
+ * Usa: PrismaAdapter (Adapter) + NivelSurtidorSubject (Observer) + PrecioContext (Strategy)
  */
 
 import { NextResponse } from 'next/server';
@@ -17,8 +15,9 @@ import {
   calcularBinarioNivel,
   evaluarLogicaAlertas,
 } from '@/lib/digitalSystems';
+import { PrecioContext } from '@/lib/strategies/PrecioStrategy';
 
-// ─── Sistema Observer (mismo patrón que en surtidores) ───
+// ─── Sistema Observer ───
 const nivelSubject = new NivelSurtidorSubject();
 nivelSubject.subscribe(new AlertaPersistenciaObserver(db));
 nivelSubject.subscribe(new LogObserver());
@@ -50,22 +49,26 @@ export async function POST(req) {
       return NextResponse.json({ error: 'Nivel insuficiente en el surtidor' }, { status: 400 });
     }
 
-    // 2. Cálculos de Sistemas Digitales — Aritmética Binaria
-    const totalDecimal     = litrosNum * Number(precioPorLitro);
-    const totalBinario     = decimalABinario(totalDecimal);
-    const nuevoNivelLitros = surtidor.nivelLitros - litrosNum;
-    const porcentaje       = (nuevoNivelLitros / surtidor.capacidad) * 100;
+    // 2. Strategy: calcular precio usando la estrategia del combustible
+    const strategy      = PrecioContext.getStrategy(surtidor.combustible);
+    const precioFinal   = precioPorLitro ? Number(precioPorLitro) : strategy.getPrecioPorLitro();
+    const totalDecimal  = litrosNum * precioFinal;
+
+    // 3. Sistemas Digitales — Aritmética Binaria + nuevo nivel
+    const totalBinario      = decimalABinario(totalDecimal);
+    const nuevoNivelLitros  = surtidor.nivelLitros - litrosNum;
+    const porcentaje        = (nuevoNivelLitros / surtidor.capacidad) * 100;
     const { code: nuevoCodigoBinario } = calcularBinarioNivel(porcentaje);
     const { ledRojo, ledAmarillo }     = evaluarLogicaAlertas(nuevoCodigoBinario);
     const nuevoEstado = (ledRojo || ledAmarillo) ? 'ALERTA' : 'OPERATIVO';
 
-    // 3. Transacción atómica via Adapter (venta + actualización de surtidor)
+    // 4. Transacción atómica via Adapter
     const [venta] = await db.registrarVentaConActualizacion(
       {
         surtidorId:    surtidor.id,
         combustible:   surtidor.combustible,
         litros:        litrosNum,
-        precioPorLitro: Number(precioPorLitro),
+        precioPorLitro: precioFinal,
         total:         totalDecimal,
         totalBinario,
       },
@@ -77,9 +80,18 @@ export async function POST(req) {
       }
     );
 
-    // 4. Observer notifica sobre el nuevo nivel tras la venta
-    const surtidorActualizado = { ...surtidor, nivelLitros: nuevoNivelLitros, codigoBinario: nuevoCodigoBinario };
-    await nivelSubject.notify({ surtidor: surtidorActualizado, ledRojo, ledAmarillo, porcentaje });
+    // 5. Observer notifica cambio de nivel → genera/resuelve alertas
+    const surtidorActualizado = {
+      ...surtidor,
+      nivelLitros:   nuevoNivelLitros,
+      codigoBinario: nuevoCodigoBinario,
+    };
+    await nivelSubject.notify({
+      surtidor: surtidorActualizado,
+      ledRojo,
+      ledAmarillo,
+      porcentaje,
+    });
 
     return NextResponse.json(venta, { status: 201 });
   } catch (error) {

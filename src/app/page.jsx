@@ -19,12 +19,15 @@ import {
   BarChart3,
   TrendingUp,
   Layers,
+  ShieldCheck,
+  Cpu,
 } from 'lucide-react';
 
 import Sidebar from '@/components/Sidebar';
 import MetricCard from '@/components/MetricCard';
 import SurtidorCard from '@/components/SurtidorCard';
 import KarnaughMap from '@/components/KarnaughMap';
+import CircuitDiagram from '@/components/CircuitDiagram';
 import VentaModal from '@/components/VentaModal';
 import SurtidorModal from '@/components/SurtidorModal';
 import { decimalABinario } from '@/lib/digitalSystems';
@@ -223,6 +226,25 @@ export default function Dashboard() {
   const handleEditSurtidor = (surtidor) => {
     setEditingSurtidor(surtidor);
     setShowSurtidorModal(true);
+  };
+
+  // ─── Resolver Alerta ───
+  const handleResolverAlerta = async (id) => {
+    try {
+      const res = await fetch('/api/alertas', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id, estado: 'RESUELTA' }),
+      });
+      if (res.ok) {
+        toast.success('✅ Alerta marcada como RESUELTA');
+        fetchData();
+      } else {
+        toast.error('No se pudo resolver la alerta.');
+      }
+    } catch {
+      toast.error('Error de red al resolver la alerta.');
+    }
   };
 
   // ─── KPI calculations ───
@@ -460,6 +482,26 @@ export default function Dashboard() {
               </button>
             </div>
 
+            {/* Circuito digital del primer surtidor con alerta activa */}
+            {(() => {
+              const alertaActiva = alertas.find(a => a.estado === 'ACTIVA');
+              const surtidorAlerta = alertaActiva
+                ? surtidores.find(s => s.id === (alertaActiva.surtidorId || alertaActiva.surtidor?.id))
+                : surtidores[0];
+              if (!surtidorAlerta) return null;
+              return (
+                <div className="card" style={{ marginBottom: '1.25rem' }}>
+                  <div className="report-card-title" style={{ marginBottom: '0.75rem' }}>
+                    <Cpu /> Circuito de Compuertas — Surtidor #{surtidorAlerta.numero}
+                    <span style={{ marginLeft: 'auto', fontFamily: 'var(--font-mono)', fontSize: '0.75rem', color: 'var(--text-muted)' }}>
+                      S1={surtidorAlerta.codigoBinario[0]}, S0={surtidorAlerta.codigoBinario[1]}
+                    </span>
+                  </div>
+                  <CircuitDiagram codigoBinario={surtidorAlerta.codigoBinario} />
+                </div>
+              );
+            })()}
+
             {alertas.length === 0 ? (
               <div className="card">
                 <EmptyState icon={Check} title="Sin alertas activas" text="Todos los surtidores operan en niveles normales (m₂/m₃ — LED Verde)" />
@@ -469,11 +511,11 @@ export default function Dashboard() {
                 {alertas.map(a => (
                   <div
                     key={a.id}
-                    className={`card alert-card ${a.tipo === 'CRITICO' ? 'critico' : 'bajo'}`}
+                    className={`card alert-card ${a.tipo === 'CRITICO' ? 'critico' : 'bajo'} ${a.estado === 'RESUELTA' ? 'resuelta-card' : ''}`}
                   >
                     <div style={{ flex: 1 }}>
                       <div className="alert-header">
-                        <span className={`led-indicator ${a.tipo === 'CRITICO' ? 'rojo' : 'amarillo'}`} />
+                        <span className={`led-indicator ${a.tipo === 'CRITICO' ? 'rojo' : 'amarillo'} ${a.estado === 'RESUELTA' ? 'apagado' : ''}`} />
                         <span className={`alert-type ${a.tipo === 'CRITICO' ? 'critico' : 'bajo'}`}>
                           {a.tipo}: Surtidor #{a.surtidor?.numero || a.surtidorId}
                         </span>
@@ -487,9 +529,20 @@ export default function Dashboard() {
                         <span style={{ color: 'var(--accent-cyan)', fontWeight: 700 }}>{a.logicaKarnaugh}</span>
                       </div>
                     </div>
-                    <span className={`alert-status-badge ${a.estado === 'ACTIVA' ? 'activa' : 'resuelta'}`}>
-                      {a.estado}
-                    </span>
+                    <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: '0.5rem' }}>
+                      <span className={`alert-status-badge ${a.estado === 'ACTIVA' ? 'activa' : 'resuelta'}`}>
+                        {a.estado}
+                      </span>
+                      {a.estado === 'ACTIVA' && (
+                        <button
+                          className="btn btn-success btn-sm"
+                          onClick={() => handleResolverAlerta(a.id)}
+                          title="Marcar como resuelta"
+                        >
+                          <ShieldCheck /> Resolver
+                        </button>
+                      )}
+                    </div>
                   </div>
                 ))}
               </div>
@@ -568,8 +621,8 @@ export default function Dashboard() {
                 title="K-Map: LED Rojo (Crítico — m₀)"
                 icon={AlertTriangle}
                 activeMinterm={0}
-                expression="F = S1′ · S0′ = (S1+S0)′"
-                gate="NOR Gate"
+                expression="F = NAND(NAND(S1,S1), NAND(S0,S0)) = S1'·S0'"
+                gate="NAND Universal + NOR Gate"
                 gateColor="var(--accent-rose)"
               />
 
@@ -578,8 +631,8 @@ export default function Dashboard() {
                 title="K-Map: LED Amarillo (Bajo — m₁)"
                 icon={Zap}
                 activeMinterm={1}
-                expression="F = S1′ · S0"
-                gate="AND + NOT Gate"
+                expression="F = AND(NOT S1, S0) = S1'·S0"
+                gate="AND + NOT Gate (Mintermino m₁)"
                 gateColor="var(--accent-amber)"
               />
             </div>
