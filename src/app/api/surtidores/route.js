@@ -1,142 +1,93 @@
-import { NextResponse } from 'next/server';
-import prisma from '@/lib/prisma';
-import { calcularBinarioNivel, evaluarLogicaAlertas } from '@/lib/digitalSystems';
+/**
+ * API Route: /api/surtidores
+ * Refactorizada para usar:
+ *   - SurtidorFactory (Patrón Creacional)
+ *   - PrismaAdapter   (Patrón Estructural/Adapter)
+ *   - NivelSurtidorSubject + AlertaPersistenciaObserver (Patrón Observer)
+ */
 
+import { NextResponse } from 'next/server';
+import { db } from '@/lib/adapters/PrismaAdapter';
+import { SurtidorFactory } from '@/lib/factories/SurtidorFactory';
+import {
+  NivelSurtidorSubject,
+  AlertaPersistenciaObserver,
+  LogObserver,
+} from '@/lib/observers/AlertaObserver';
+import { evaluarLogicaAlertas } from '@/lib/digitalSystems';
+
+// ─── Configurar el sistema Observer una sola vez ───
+const nivelSubject = new NivelSurtidorSubject();
+nivelSubject.subscribe(new AlertaPersistenciaObserver(db));
+nivelSubject.subscribe(new LogObserver());
+
+// ─── GET /api/surtidores ───────────────────────────────────────────
 export async function GET() {
   try {
-    const surtidores = await prisma.surtidor.findMany({
-      include: {
-        alertas: {
-          where: { estado: 'ACTIVA' }
-        }
-      },
-      orderBy: { numero: 'asc' }
-    });
+    const surtidores = await db.findAllSurtidores();
     return NextResponse.json(surtidores);
   } catch (error) {
     return NextResponse.json({ error: error.message }, { status: 500 });
   }
 }
 
+// ─── POST /api/surtidores ─────────────────────────────────────────
 export async function POST(req) {
   try {
     const body = await req.json();
-    const { numero, combustible, capacidad, nivelLitros } = body;
 
-    const porcentaje = (nivelLitros / capacidad) * 100;
-    const { code: codigoBinario } = calcularBinarioNivel(porcentaje);
-    const { ledRojo, ledAmarillo } = evaluarLogicaAlertas(codigoBinario);
+    // Factory construye y valida el objeto Surtidor
+    const data = SurtidorFactory.crear(body);
+    const surtidor = await db.createSurtidor(data);
 
-    let estado = 'OPERATIVO';
-    if (ledRojo || ledAmarillo) estado = 'ALERTA';
-
-    const surtidor = await prisma.surtidor.create({
-      data: {
-        numero: Number(numero),
-        combustible,
-        capacidad: Number(capacidad),
-        nivelLitros: Number(nivelLitros),
-        codigoBinario,
-        estado
-      }
-    });
-
-    // Check if alert needs to be created
-    if (ledRojo) {
-      await prisma.alerta.create({
-        data: {
-          surtidorId: surtidor.id,
-          tipo: 'CRITICO',
-          mensaje: `Surtidor #${surtidor.numero}: Nivel Crítico en ${porcentaje.toFixed(1)}% (LED Rojo - Compuerta NOR / Karnaugh Mintermino m0)`,
-          logicaKarnaugh: "F(S1,S0) = (S1 + S0)' => [00]"
-        }
-      });
-    } else if (ledAmarillo) {
-      await prisma.alerta.create({
-        data: {
-          surtidorId: surtidor.id,
-          tipo: 'BAJO',
-          mensaje: `Surtidor #${surtidor.numero}: Nivel Bajo en ${porcentaje.toFixed(1)}% (LED Amarillo - Compuerta AND/NOT / Karnaugh Mintermino m1)`,
-          logicaKarnaugh: "F(S1,S0) = S1' · S0 => [01]"
-        }
-      });
-    }
+    // Observer notifica sobre el nivel inicial
+    const porcentaje = (surtidor.nivelLitros / surtidor.capacidad) * 100;
+    const { ledRojo, ledAmarillo } = evaluarLogicaAlertas(surtidor.codigoBinario);
+    await nivelSubject.notify({ surtidor, ledRojo, ledAmarillo, porcentaje });
 
     return NextResponse.json(surtidor, { status: 201 });
   } catch (error) {
-    return NextResponse.json({ error: error.message }, { status: 500 });
+    const status = error.message.includes('desconocido') ||
+                   error.message.includes('debe') ||
+                   error.message.includes('puede') ? 400 : 500;
+    return NextResponse.json({ error: error.message }, { status });
   }
 }
 
+// ─── PUT /api/surtidores ──────────────────────────────────────────
 export async function PUT(req) {
   try {
     const body = await req.json();
-    const { id, numero, combustible, capacidad, nivelLitros } = body;
+    const { id, ...rest } = body;
 
-    const porcentaje = (nivelLitros / capacidad) * 100;
-    const { code: codigoBinario } = calcularBinarioNivel(porcentaje);
-    const { ledRojo, ledAmarillo } = evaluarLogicaAlertas(codigoBinario);
+    if (!id) return NextResponse.json({ error: 'ID requerido' }, { status: 400 });
 
-    let estado = 'OPERATIVO';
-    if (ledRojo || ledAmarillo) estado = 'ALERTA';
+    // Factory valida y calcula los nuevos valores
+    const data = SurtidorFactory.crear(rest);
+    const surtidor = await db.updateSurtidor(id, data);
 
-    const surtidor = await prisma.surtidor.update({
-      where: { id: Number(id) },
-      data: {
-        numero: Number(numero),
-        combustible,
-        capacidad: Number(capacidad),
-        nivelLitros: Number(nivelLitros),
-        codigoBinario,
-        estado
-      }
-    });
-
-    // Clear old active alerts for this surtidor if it's now ok
-    if (!ledRojo && !ledAmarillo) {
-      await prisma.alerta.updateMany({
-        where: { surtidorId: surtidor.id, estado: 'ACTIVA' },
-        data: { estado: 'RESUELTA' }
-      });
-    } else {
-      // Create new alert if status changed
-      if (ledRojo) {
-        await prisma.alerta.create({
-          data: {
-            surtidorId: surtidor.id,
-            tipo: 'CRITICO',
-            mensaje: `Surtidor #${surtidor.numero}: Nivel Crítico en ${porcentaje.toFixed(1)}% (LED Rojo - Compuerta NOR / Karnaugh Mintermino m0)`,
-            logicaKarnaugh: "F(S1,S0) = (S1 + S0)' => [00]"
-          }
-        });
-      } else if (ledAmarillo) {
-        await prisma.alerta.create({
-          data: {
-            surtidorId: surtidor.id,
-            tipo: 'BAJO',
-            mensaje: `Surtidor #${surtidor.numero}: Nivel Bajo en ${porcentaje.toFixed(1)}% (LED Amarillo - Compuerta AND/NOT / Karnaugh Mintermino m1)`,
-            logicaKarnaugh: "F(S1,S0) = S1' · S0 => [01]"
-          }
-        });
-      }
-    }
+    // Observer evalúa si se deben crear/resolver alertas
+    const porcentaje = (surtidor.nivelLitros / surtidor.capacidad) * 100;
+    const { ledRojo, ledAmarillo } = evaluarLogicaAlertas(surtidor.codigoBinario);
+    await nivelSubject.notify({ surtidor, ledRojo, ledAmarillo, porcentaje });
 
     return NextResponse.json(surtidor);
   } catch (error) {
-    return NextResponse.json({ error: error.message }, { status: 500 });
+    const status = error.message.includes('desconocido') ||
+                   error.message.includes('debe') ||
+                   error.message.includes('puede') ? 400 : 500;
+    return NextResponse.json({ error: error.message }, { status });
   }
 }
 
+// ─── DELETE /api/surtidores?id=X ─────────────────────────────────
 export async function DELETE(req) {
   try {
     const { searchParams } = new URL(req.url);
     const id = searchParams.get('id');
     if (!id) return NextResponse.json({ error: 'ID requerido' }, { status: 400 });
 
-    await prisma.surtidor.delete({
-      where: { id: Number(id) }
-    });
-
+    await db.deleteSurtidor(id);
     return NextResponse.json({ success: true });
   } catch (error) {
     return NextResponse.json({ error: error.message }, { status: 500 });
