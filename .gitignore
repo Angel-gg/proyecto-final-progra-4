@@ -19,7 +19,7 @@ npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
 
-# local env files
+# local env files (el .env se configura en Vercel Dashboard)
 .env*.local
 .env
 
@@ -29,3 +29,11 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+# test coverage (generado localmente)
+/coverage
+
+# NOTA: prisma/dev.db NO está ignorado a propósito.
+# SQLite file-based se incluye en el repo para que Vercel
+# tenga la BD disponible en el filesystem durante el build.
+

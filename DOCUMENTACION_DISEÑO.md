@@ -7,129 +7,219 @@ Esta documentación detalla los fundamentos de **Sistemas Digitales (SD)** y de 
 
 ## 1. Diseño Lógico de Sensores de Nivel (S1, S0)
 
-El nivel de almacenamiento del combustible en cada surtidor se monitoriza digitalmente utilizando **dos sensores binarios ($S_1, S_0$)**, capaces de representar 4 estados lógicos ($2^2 = 4$).
+El nivel de almacenamiento del combustible en cada surtidor se monitoriza digitalmente utilizando **dos sensores binarios (S₁, S₀)**, capaces de representar 4 estados lógicos (2² = 4).
 
 ### Tabla de Verdad de Niveles y LEDs
 
-| Entrada ($S_1$) | Entrada ($S_0$) | Porcentaje de Nivel | Estado / LED Activo | Mintermino |
+| Entrada (S₁) | Entrada (S₀) | Porcentaje de Nivel | Estado / LED Activo | Mintermino |
 | :---: | :---: | :---: | :---: | :---: |
-| 0 | 0 | 0% - 25% | **Crítico / LED Rojo** | $m_0$ |
-| 0 | 1 | 25% - 50% | **Bajo / LED Amarillo** | $m_1$ |
-| 1 | 0 | 50% - 75% | **Normal-Medio / LED Verde** | $m_2$ |
-| 1 | 1 | 75% - 100% | **Normal-Lleno / LED Verde** | $m_3$ |
+| 0 | 0 | 0% - 25% | **Crítico / LED Rojo** | m₀ |
+| 0 | 1 | 25% - 50% | **Bajo / LED Amarillo** | m₁ |
+| 1 | 0 | 50% - 75% | **Normal-Medio / LED Verde** | m₂ |
+| 1 | 1 | 75% - 100% | **Normal-Lleno / LED Verde** | m₃ |
 
 ---
 
-## 2. Simplificación y Mapas de Karnaugh
+## 2. Compuertas Lógicas Implementadas
 
-Para controlar la activación de las alertas físicas (LEDs) se diseñaron circuitos lógicos combinacionales utilizando minitérminos.
+El sistema implementa compuertas lógicas en código JavaScript puro como funciones exportables:
 
-### A. LED Rojo ($F_{rojo}$ - Nivel Crítico)
+| Compuerta | Función JS | Expresión Booleana | Uso en el sistema |
+|:---:|:---:|:---:|:---|
+| AND  | `AND(a, b) = a && b` | A·B | Combinar NOT S1 con S0 para LED Amarillo |
+| OR   | `OR(a, b) = a \|\| b` | A+B | Base de NOR |
+| NOT  | `NOT(a) = !a` | A' | Inversión de señales |
+| **NAND** | `NAND(a, b) = !(a && b)` | **(A·B)'** | **Inversor universal → LED Rojo** |
+| **NOR**  | `NOR(a, b) = !(a \|\| b)` | **(A+B)'** | **Verificación LED Rojo (m₀)** |
+| XNOR | `XNOR(a, b) = a === b` | (A⊕B)' | Equivalencia lógica |
 
-Se activa únicamente cuando el tanque está críticamente bajo ($00$):
-* Minterminos activos: $m_0 = \bar{S_1} \cdot \bar{S_0}$
+> **Propiedad Universal de NAND**: Cualquier función lógica puede implementarse solo con compuertas NAND.
+> `NAND(x, x) = NOT(x)` — Se usa NAND como inversor para S1 y S0.
+
+---
+
+## 3. Simplificación y Mapas de Karnaugh
+
+Para controlar la activación de las alertas físicas (LEDs) se diseñaron circuitos lógicos combinacionales utilizando minterminos.
+
+### A. LED Rojo (F_rojo — Nivel Crítico) — m₀
+
+Se activa únicamente cuando el tanque está críticamente bajo (código `00`):
 
 **Mapa de Karnaugh:**
 ```
       S0
-S1 \  0   1
-   +---+---+
- 0 | 1 | 0 |  <- m0 activo (1)
-   +---+---+
- 1 | 0 | 0 |
-   +---+---+
+S1 \   0    1
+    +----+----+
+ 0  |  1 |  0 |  ← m₀ activo
+    +----+----+
+ 1  |  0 |  0 |
+    +----+----+
 ```
-* **Expresión Lógica**: $F_{rojo} = \bar{S_1} \cdot \bar{S_0}$
-* **Compuerta Lógica**: Una compuerta **NOR** $(\overline{S_1 + S_0})$.
+
+**Implementación con NAND Universal:**
+```
+notS1 = NAND(S1, S1)          → NOT(S1) = S1'
+notS0 = NAND(S0, S0)          → NOT(S0) = S0'
+LED_Rojo = AND(notS1, notS0)  → S1'·S0'
+Verificación: NOR(S1, S0)     → (S1+S0)' = S1'·S0' ✓
+```
+
+* **Expresión Simplificada**: `F_rojo = S1'·S0' = NOR(S1, S0)`
+* **Compuerta NAND Universal**: `NAND(NAND(S1,S1), NAND(S0,S0))` → `S1'·S0'`
 
 ---
 
-### B. LED Amarillo ($F_{amarillo}$ - Nivel Bajo)
+### B. LED Amarillo (F_amarillo — Nivel Bajo) — m₁
 
-Se activa únicamente cuando el nivel está entre el 25% y 50% ($01$):
-* Minterminos activos: $m_1 = \bar{S_1} \cdot S_0$
+Se activa únicamente cuando el nivel está entre el 25% y 50% (código `01`):
 
 **Mapa de Karnaugh:**
 ```
       S0
-S1 \  0   1
-   +---+---+
- 0 | 0 | 1 |  <- m1 activo (1)
-   +---+---+
- 1 | 0 | 0 |
-   +---+---+
+S1 \   0    1
+    +----+----+
+ 0  |  0 |  1 |  ← m₁ activo
+    +----+----+
+ 1  |  0 |  0 |
+    +----+----+
 ```
-* **Expresión Lógica**: $F_{amarillo} = \bar{S_1} \cdot S_0$
-* **Compuerta Lógica**: Una compuerta **AND** con entrada $S_1$ negada $(\text{NOT}(S_1) \text{ AND } S_0)$.
+
+* **Expresión Lógica**: `F_amarillo = S1'·S0 = AND(NOT S1, S0)`
+* **Compuerta**: AND con entrada S1 negada
 
 ---
 
-### C. LED Verde ($F_{verde}$ - Nivel Normal/Lleno)
+### C. LED Verde (F_verde — Nivel Normal/Lleno) — m₂ + m₃
 
-Se activa si el tanque está en niveles óptimos ($10$ o $11$):
-* Minterminos activos: $m_2 + m_3 = (S_1 \cdot \bar{S_0}) + (S_1 \cdot S_0)$
+Se activa si el tanque está en niveles óptimos (códigos `10` o `11`):
 
 **Simplificación por Álgebra de Boole:**
-$$F_{verde} = S_1 \cdot (\bar{S_0} + S_0)$$
-Como $\bar{S_0} + S_0 = 1$ (Ley del complemento):
-$$F_{verde} = S_1 \cdot 1 = S_1$$
+```
+F_verde = S1·S0' + S1·S0
+        = S1·(S0' + S0)     [factor común S1]
+        = S1·1               [S0'+S0 = 1, ley del complemento]
+        = S1
+```
 
-* **Expresión Lógica**: $F_{verde} = S_1$
-* **Compuerta Lógica**: Conexión directa del bit más significativo ($S_1$ en estado alto).
+* **Expresión Simplificada**: `F_verde = S1`
+* **Implementación**: Conexión directa del bit más significativo S1 en estado alto.
 
 ---
 
-## 3. Decodificador de Combustibles (2 bits)
+## 4. Decodificador de Combustibles (2 bits)
 
-Se utiliza un decodificador de 2 bits para asignar los combustibles disponibles basándose en una codificación lógica en base de datos:
+Se utiliza un decodificador de 2 bits para asignar los combustibles disponibles:
 
 | Código Binario | Línea Activa | Combustible Asignado | Precio Oficial |
 | :---: | :---: | :---: | :---: |
-| `00` | $D_0$ | Gasolina Especial | Bs. 3.74 |
-| `01` | $D_1$ | Diesel Oil | Bs. 3.72 |
-| `10` | $D_2$ | Gasolina Premium Ultra | Bs. 4.79 |
-| `11` | $D_3$ | GNV Vehicular | Bs. 1.66 / m³ |
+| `00` | D₀ | Gasolina Especial | Bs. 3.74 |
+| `01` | D₁ | Diesel Oil | Bs. 3.72 |
+| `10` | D₂ | Gasolina Premium Ultra | Bs. 4.79 |
+| `11` | D₃ | GNV Vehicular | Bs. 1.66 / m³ |
+
+El **Patrón Strategy** (`PrecioStrategy.js`) encapsula esta tabla como estrategias intercambiables, una por cada tipo de combustible. `PrecioContext.getStrategy(combustible)` selecciona automáticamente la estrategia correcta.
 
 ---
 
-## 4. Aritmética Binaria para Cálculo de Ventas
+## 5. Aritmética Binaria para Cálculo de Ventas
 
 El sistema realiza el cálculo del importe en base decimal:
-$$\text{Total (Bs.)} = \text{Litros} \times \text{Precio por Litro}$$
+```
+Total (Bs.) = Litros × Precio por Litro
+```
 
-Posteriormente, implementa un algoritmo de **Conversión a Coma Fija Binaria** para simular un procesador digital (dentro de `digitalSystems.js`):
-1. **Parte Entera**: Conversión mediante divisiones sucesivas entre 2.
-2. **Parte Fraccionaria**: Conversión mediante multiplicaciones sucesivas por 2 (precisión de 6 bits de resolución).
+Luego convierte a **Coma Fija Binaria** para registrar en BD y mostrar en la UI (campo `totalBinario`):
 
-*Ejemplo:*
-* Total: Bs. $15.50$
-* Parte Entera: $15_{10} = 1111_2$
-* Parte Fraccionaria: $0.5_{10} \times 2 = 1.0 \rightarrow 1_2$
-* Resultado binario final: $1111.1_2$
+1. **Parte Entera**: Conversión mediante `Number.toString(2)` (divisiones sucesivas por 2).
+2. **Parte Fraccionaria**: Multiplicaciones sucesivas por 2 (máx 6 bits de resolución).
+
+**Ejemplo completo:**
+```
+Total: Bs. 149.60
+  Parte entera: 149 → 10010101₂
+  Fracción: 0.60:
+    0.60 × 2 = 1.20 → 1
+    0.20 × 2 = 0.40 → 0
+    0.40 × 2 = 0.80 → 0
+    0.80 × 2 = 1.60 → 1
+    0.60 × 2 = 1.20 → 1  (ciclo)
+    0.20 × 2 = 0.40 → 0
+  Fracción: 100110₂
+
+Resultado final: 10010101.100110₂
+```
 
 ---
 
-## 5. Arquitectura de Software
+## 6. Patrones de Diseño Implementados
 
-El proyecto se estructuró con un diseño modular y desacoplado:
+### 6.1 Factory (Creacional) — `SurtidorFactory`
+Centraliza la construcción de objetos Surtidor con:
+- Validación de datos (número positivo, nivel ≤ capacidad, combustible válido)
+- Cálculo automático de `codigoBinario` via `calcularBinarioNivel()`
+- Determinación de `estado` (OPERATIVO / ALERTA) via K-Map
+
+### 6.2 Adapter (Estructural) — `PrismaAdapter`
+Desacopla las rutas API del ORM mediante:
+- Interfaz `DatabasePort` (contrato abstracto)
+- `PrismaAdapter` implementa el contrato con Prisma
+- Transacciones atómicas en `registrarVentaConActualizacion()`
+- Cambiar a Supabase = crear `SupabaseAdapter` sin modificar rutas
+
+### 6.3 Observer (Comportamiento) — `NivelSurtidorSubject`
+Sistema reactivo de alertas:
+- `NivelSurtidorSubject.notify()` se llama al cambiar nivel
+- `AlertaPersistenciaObserver.update()` guarda/resuelve alertas en BD
+- `LogObserver.update()` registra eventos en consola
+
+### 6.4 Strategy (Comportamiento) — `PrecioContext`
+Cálculo de precios encapsulado por tipo de combustible:
+- Una estrategia por combustible (4 en total)
+- `PrecioContext.getStrategy(nombre)` selecciona automáticamente
+- Los códigos binarios de estrategia coinciden con el decodificador de combustible
+
+---
+
+## 7. Arquitectura de Software
 
 ```mermaid
 graph TD
-    A[Layout.jsx / sonner Toaster] --> B[page.jsx / Dashboard Principal]
-    B --> C[Sidebar Component]
-    B --> D[MetricCard Component]
-    B --> E[SurtidorCard Component]
-    B --> F[KarnaughMap Component]
-    B --> G[VentaModal Component]
-    B --> H[SurtidorModal Component]
-    B --> I[digitalSystems.js / Biblioteca Digital]
-    B --> J[Next.js API Routes]
-    J --> K[Prisma ORM & SQLite]
+    A[layout.jsx / Toaster Sonner] --> B[page.jsx / Dashboard Principal]
+    B --> C[Sidebar.jsx + Web Speech API]
+    B --> D[MetricCard.jsx]
+    B --> E[SurtidorCard.jsx]
+    B --> F[KarnaughMap.jsx]
+    B --> G[CircuitDiagram.jsx SVG NAND/NOR]
+    B --> H[VentaModal.jsx]
+    B --> I[SurtidorModal.jsx]
+    B --> J[/api/surtidores]
+    B --> K[/api/ventas]
+    B --> L[/api/alertas]
+    J --> M[SurtidorFactory]
+    J --> N[PrismaAdapter]
+    J --> O[NivelSurtidorSubject]
+    K --> P[PrecioContext Strategy]
+    K --> N
+    K --> O
+    L --> N
+    M --> DS[digitalSystems.js]
+    N --> Q[Prisma ORM]
+    Q --> R[(SQLite dev.db)]
+    DS --> E
+    DS --> G
+    DS --> H
+    DS --> I
 ```
 
-### Componentes Creados:
-- **`Sidebar.jsx`**: Panel de navegación y control de comandos de voz mediante Web Speech API.
-- **`SurtidorCard.jsx`**: Representación gráfica de cada tanque con lógica visual asociada al nivel.
-- **`KarnaughMap.jsx`**: Renderización del mapa 2x2.
-- **`VentaModal.jsx` / `SurtidorModal.jsx`**: Diálogos con validaciones locales y previsualizaciones en código binario en tiempo real.
-- **`MetricCard.jsx`**: Componente de indicadores estadísticos (KPIs).
+### Componentes de UI
+
+| Componente | Responsabilidad |
+|---|---|
+| `Sidebar.jsx` | Navegación principal + Widget de Web Speech API (comandos de voz) |
+| `MetricCard.jsx` | KPIs del dashboard (ingresos, litros, surtidores, alertas) |
+| `SurtidorCard.jsx` | Tarjeta de surtidor con barra de nivel animada y código binario en tiempo real |
+| `KarnaughMap.jsx` | Visualización del Mapa K 2×2 con mintermino resaltado |
+| `CircuitDiagram.jsx` | Diagrama SVG animado del circuito NAND/NOR con señales coloreadas en tiempo real |
+| `VentaModal.jsx` | Formulario de nueva venta con preview de aritmética binaria en tiempo real |
+| `SurtidorModal.jsx` | Formulario crear/editar surtidor con preview de sensor binario en tiempo real |
